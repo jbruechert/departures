@@ -1,17 +1,18 @@
 package main
 
 import (
-	"encoding/json"
+	"context"
 	"flag"
 	"fmt"
-	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/fatih/color"
+	"github.com/noxer/departures/api"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 	"gopkg.in/AlecAivazis/survey.v1"
@@ -35,18 +36,20 @@ func main() {
 	flag.Parse()
 
 	// ensure valid retry values
-	if *retries < 0 {
-		*retries = 0
-	}
-	if *retryPause < 0 {
-		*retryPause = 0
-	}
+	*retries = max(*retries, 0)
+	*retryPause = max(*retryPause, 0)
 
-	var err error
+	// create the API client for the VBB network (Berlin-Brandenburg)
+	client, err := api.New(api.NetworkVBB)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		os.Exit(1)
+	}
+	ctx := context.Background()
 
 	// check if the user just wants to find the station ID
 	if *search != "" {
-		stations, err := searchStations(*search)
+		stations, err := searchStations(ctx, client, *search)
 		if err != nil {
 			fmt.Println("Could not query stations")
 			fmt.Fprintf(os.Stderr, "Error: %s\n", err)
@@ -63,7 +66,7 @@ func main() {
 
 	// search of the station and provide user option to choose
 	if *id == "" && *stationName != "" {
-		s, err := promptForStation(*stationName)
+		s, err := promptForStation(ctx, client, *stationName)
 		if err != nil {
 			fmt.Println(err)
 		} else {
@@ -73,17 +76,17 @@ func main() {
 
 	// set default id if empty
 	if *id == "" {
-		fmt.Println("station ID is empty. Defaulting to: 900000100003")
-		*id = "900000100003"
+		fmt.Println("station ID is empty. Defaulting to: 900100003")
+		*id = "900100003"
 	}
 
 	// set the color mode
 	color.NoColor = color.NoColor && !*forceColor
 
 	// request the departures
-	var deps []result
-	for i := 0; i < *retries+1; i++ {
-		err = getJSON(&deps, "https://v5.vbb.transport.rest/stops/%s/departures?duration=%d", *id, *min)
+	var deps []api.Departure
+	for range *retries + 1 {
+		deps, err = client.Departures(*id).Duration(*min).Do(ctx)
 		if err == nil {
 			break
 		}
@@ -195,15 +198,12 @@ func main() {
 	}
 }
 
-func searchStations(name string) ([]station, error) {
-	var stations []station
-	err := getJSON(&stations, "https://v5.vbb.transport.rest/locations?query=%s&poi=false&addresses=false", name)
-
-	return stations, err
+func searchStations(ctx context.Context, client *api.Client, name string) ([]api.Location, error) {
+	return client.Locations(name).Addresses(false).POI(false).Do(ctx)
 }
 
-func promptForStation(name string) (*station, error) {
-	stations, err := searchStations(name)
+func promptForStation(ctx context.Context, client *api.Client, name string) (*api.Location, error) {
+	stations, err := searchStations(ctx, client, name)
 	if err != nil {
 		return nil, fmt.Errorf("could not query stations")
 	}
@@ -217,9 +217,9 @@ func promptForStation(name string) (*station, error) {
 	// set first result as fallback
 	fallback := stations[0].Name
 
-	// convert to map[string]station to get station after user prompt
+	// convert to map[string]api.Location to get station after user prompt
 	var options []string
-	optionStation := map[string]station{}
+	optionStation := map[string]api.Location{}
 	for _, s := range stations {
 		options = append(options, s.Name)
 		optionStation[s.Name] = s
@@ -241,90 +241,6 @@ func promptForStation(name string) (*station, error) {
 	return &s, nil
 }
 
-func getJSON(v interface{}, urlFormat string, values ...interface{}) error {
-	resp, err := http.Get(fmt.Sprintf(urlFormat, values...))
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	d := json.NewDecoder(resp.Body)
-	return d.Decode(v)
-}
-
-type result struct {
-	TripID string `json:"tripId"`
-	Stop   struct {
-		Type     string `json:"type"`
-		ID       string `json:"id"`
-		Name     string `json:"name"`
-		Location struct {
-			Type      string  `json:"type"`
-			ID        string  `json:"id"`
-			Latitude  float64 `json:"latitude"`
-			Longitude float64 `json:"longitude"`
-		} `json:"location"`
-		Products struct {
-			Suburban bool `json:"suburban"`
-			Subway   bool `json:"subway"`
-			Tram     bool `json:"tram"`
-			Bus      bool `json:"bus"`
-			Ferry    bool `json:"ferry"`
-			Express  bool `json:"express"`
-			Regional bool `json:"regional"`
-		} `json:"products"`
-	} `json:"stop"`
-	When      time.Time `json:"when"`
-	Direction string    `json:"direction"`
-	Line      struct {
-		Type     string `json:"type"`
-		ID       string `json:"id"`
-		FahrtNr  string `json:"fahrtNr"`
-		Name     string `json:"name"`
-		Public   bool   `json:"public"`
-		Mode     string `json:"mode"`
-		Product  string `json:"product"`
-		Operator struct {
-			Type string `json:"type"`
-			ID   string `json:"id"`
-			Name string `json:"name"`
-		} `json:"operator"`
-		Symbol  string `json:"symbol"`
-		Nr      int    `json:"nr"`
-		Metro   bool   `json:"metro"`
-		Express bool   `json:"express"`
-		Night   bool   `json:"night"`
-	} `json:"line"`
-	Remarks []struct {
-		Type string `json:"type"`
-		Code string `json:"code"`
-		Text string `json:"text"`
-	} `json:"remarks"`
-	Delay    int    `json:"delay"`
-	Platform string `json:"platform"`
-}
-
-type station struct {
-	Type     string `json:"type"`
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Location struct {
-		Type      string  `json:"type"`
-		ID        string  `json:"id"`
-		Latitude  float64 `json:"latitude"`
-		Longitude float64 `json:"longitude"`
-	} `json:"location"`
-	Products struct {
-		Suburban bool `json:"suburban"`
-		Subway   bool `json:"subway"`
-		Tram     bool `json:"tram"`
-		Bus      bool `json:"bus"`
-		Ferry    bool `json:"ferry"`
-		Express  bool `json:"express"`
-		Regional bool `json:"regional"`
-	} `json:"products"`
-}
-
 func leftPad(s string, l int) string {
 	r := []rune(s)
 	if len(r) >= l {
@@ -343,7 +259,7 @@ func rightPad(s string, l int) string {
 	return string(r) + strings.Repeat(" ", l-len(r))
 }
 
-func departureTime(r result) string {
+func departureTime(r api.Departure) string {
 	if r.Delay == 0 {
 		return r.When.Format("15:04")
 	}
@@ -363,24 +279,13 @@ func filterSlice(filter string) []string {
 }
 
 func isFiltered(filter []string, v string) bool {
-	if len(filter) == 0 {
-		return false
-	}
-
-	for _, f := range filter {
-		if strings.EqualFold(f, v) {
-			return false
-		}
-	}
-	return true
+	return len(filter) > 0 && !slices.ContainsFunc(filter, func(f string) bool {
+		return strings.EqualFold(f, v)
+	})
 }
 
 func maxStringLen(s string, l int) int {
-	c := utf8.RuneCountInString(s)
-	if c > l {
-		return c
-	}
-	return l
+	return max(l, utf8.RuneCountInString(s))
 }
 
 func intEnv(key string) int {
@@ -388,11 +293,8 @@ func intEnv(key string) int {
 	return i
 }
 
-func filterBike(r result) bool {
-	for _, rem := range r.Remarks {
-		if strings.TrimSpace(rem.Code) == "FB" {
-			return false
-		}
-	}
-	return true
+func filterBike(r api.Departure) bool {
+	return !slices.ContainsFunc(r.Remarks, func(rem api.Remark) bool {
+		return strings.TrimSpace(rem.Code) == "FK"
+	})
 }
