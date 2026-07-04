@@ -1,0 +1,48 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & upload ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64, name: linux_amd64 }
+          - { goos: linux, goarch: "386", name: linux_386 }
+          - { goos: linux, goarch: arm, goarm: "5", name: raspi }
+          - { goos: darwin, goarch: amd64, name: macos_amd64 }
+          - { goos: darwin, goarch: arm64, name: macos_arm64 }
+          - { goos: freebsd, goarch: amd64, name: freebsd_amd64 }
+          - { goos: freebsd, goarch: "386", name: freebsd_386 }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+          CGO_ENABLED: "0"
+        run: go build -ldflags="-s -w" -o departures
+
+      - name: Package
+        run: tar -czf departures_${{ matrix.name }}.tar.gz departures README.md LICENSE
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: departures_${{ matrix.name }}.tar.gz

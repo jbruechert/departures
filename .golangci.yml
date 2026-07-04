@@ -1,0 +1,11 @@
+version: "2"
+
+linters:
+  default: standard
+  # The "standard" set (errcheck, govet, ineffassign, staticcheck, unused) is a
+  # sensible, low-noise baseline. Keep it lenient for now.
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

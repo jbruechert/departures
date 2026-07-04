@@ -246,7 +246,7 @@ func getJSON(v interface{}, urlFormat string, values ...interface{}) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	d := json.NewDecoder(resp.Body)
 	return d.Decode(v)
