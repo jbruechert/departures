@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -35,12 +36,8 @@ func main() {
 	flag.Parse()
 
 	// ensure valid retry values
-	if *retries < 0 {
-		*retries = 0
-	}
-	if *retryPause < 0 {
-		*retryPause = 0
-	}
+	*retries = max(*retries, 0)
+	*retryPause = max(*retryPause, 0)
 
 	// create the API client for the VBB network (Berlin-Brandenburg)
 	client, err := api.New(api.NetworkVBB)
@@ -88,7 +85,7 @@ func main() {
 
 	// request the departures
 	var deps []api.Departure
-	for i := 0; i < *retries+1; i++ {
+	for range *retries + 1 {
 		deps, err = client.Departures(*id).Duration(*min).Do(ctx)
 		if err == nil {
 			break
@@ -282,24 +279,13 @@ func filterSlice(filter string) []string {
 }
 
 func isFiltered(filter []string, v string) bool {
-	if len(filter) == 0 {
-		return false
-	}
-
-	for _, f := range filter {
-		if strings.EqualFold(f, v) {
-			return false
-		}
-	}
-	return true
+	return len(filter) > 0 && !slices.ContainsFunc(filter, func(f string) bool {
+		return strings.EqualFold(f, v)
+	})
 }
 
 func maxStringLen(s string, l int) int {
-	c := utf8.RuneCountInString(s)
-	if c > l {
-		return c
-	}
-	return l
+	return max(l, utf8.RuneCountInString(s))
 }
 
 func intEnv(key string) int {
@@ -308,10 +294,7 @@ func intEnv(key string) int {
 }
 
 func filterBike(r api.Departure) bool {
-	for _, rem := range r.Remarks {
-		if strings.TrimSpace(rem.Code) == "FK" {
-			return false
-		}
-	}
-	return true
+	return !slices.ContainsFunc(r.Remarks, func(rem api.Remark) bool {
+		return strings.TrimSpace(rem.Code) == "FK"
+	})
 }

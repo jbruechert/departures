@@ -33,7 +33,7 @@ func New(network Network) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) getJSON(ctx context.Context, v interface{}, urlFormat string, values ...interface{}) (err error) {
+func (c *Client) getJSON(ctx context.Context, v any, urlFormat string, values ...any) (err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, string(c.n)+fmt.Sprintf(urlFormat, values...), nil)
 	if err != nil {
 		return err
