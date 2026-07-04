@@ -37,8 +37,8 @@ func (c *Client) getJSON(ctx context.Context, v interface{}, urlFormat string, v
 		return err
 	}
 	defer func() {
-		io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
 	}()
 
 	d := json.NewDecoder(resp.Body)
