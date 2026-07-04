@@ -46,7 +46,7 @@ func (c *Client) StopsNearby(latitude, longitude float64) *stopsNearbyQuery {
 }
 
 func (q *stopsNearbyQuery) Do(ctx context.Context) ([]StopNearby, error) {
-	const u = "/stops/nearby?latitude=%f&longitude=%f&results=%d&distance=%s&stops=%t&poi=%t&linesOfStops=%t&language=%s&pretty=false"
+	const u = "/locations/nearby?latitude=%f&longitude=%f&results=%d&distance=%s&stops=%t&poi=%t&linesOfStops=%t&language=%s&pretty=false"
 
 	distance := ""
 	if q.distance > 0 {
