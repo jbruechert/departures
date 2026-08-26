@@ -102,6 +102,7 @@ func (c *Client) Departures(id string) *departuresQuery {
 		duration: 60,
 	}
 }
+
 func translateStopTimes(in motisStopTimesResponse) []Departure {
 	out := make([]Departure, 0, len(in.StopTimes))
 
@@ -148,6 +149,8 @@ func translateStopTimes(in motisStopTimesResponse) []Departure {
 					Name: st.AgencyName,
 				},
 			},
+
+			Delay: int(st.Place.Arrival.Sub(st.Place.ScheduledArrival).Seconds()),
 		})
 	}
 	return out
