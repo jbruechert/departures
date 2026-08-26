@@ -40,7 +40,7 @@ func main() {
 	*retryPause = max(*retryPause, 0)
 
 	// create the API client for the VBB network (Berlin-Brandenburg)
-	client, err := api.New(api.NetworkVBB)
+	client, err := api.New(api.Transitous)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)

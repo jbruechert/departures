@@ -13,10 +13,7 @@ import (
 type Network string
 
 const (
-	// NetworkVBB covers the whole Berlin-Brandenburg region (incl. regional trains).
-	NetworkVBB Network = "https://v6.vbb.transport.rest"
-	// NetworkBVG covers Berlin's local transit only (U-Bahn, tram, bus, S-Bahn).
-	NetworkBVG Network = "https://v6.bvg.transport.rest"
+	Transitous = "https://api.transitous.org"
 )
 
 type Client struct {
@@ -34,7 +31,12 @@ func New(network Network) (*Client, error) {
 }
 
 func (c *Client) getJSON(ctx context.Context, v any, urlFormat string, values ...any) (err error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, string(c.n)+fmt.Sprintf(urlFormat, values...), nil)
+	req, err := http.NewRequestWithContext(
+		ctx, http.MethodGet, string(c.n)+fmt.Sprintf(urlFormat, values...), nil)
+	req.Header.Set(
+		"User-Agent",
+		"Spline Departure Board (jbb@spline.de)",
+	)
 	if err != nil {
 		return err
 	}

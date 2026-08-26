@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"fmt"
 	"time"
 )
 
@@ -47,50 +46,131 @@ type Departure struct {
 type departuresQuery struct {
 	c        *Client
 	id       string
-	duration int
 	results  int
 	language string
+	duration int
+}
+type motisStopTimesResponse struct {
+	StopTimes []motisStopTime `json:"stopTimes"`
+	Place     motisPlace      `json:"place"`
+}
+type motisStopTime struct {
+	Place motisPlace `json:"place"`
+
+	Mode     string `json:"mode"`
+	RealTime bool   `json:"realTime"`
+
+	Headsign string `json:"headsign"`
+
+	TripID string `json:"tripId"`
+
+	RouteShortName string `json:"routeShortName"`
+	RouteLongName  string `json:"routeLongName"`
+
+	TripShortName string `json:"tripShortName"`
+	DisplayName   string `json:"displayName"`
+
+	AgencyID   string `json:"agencyId"`
+	AgencyName string `json:"agencyName"`
+
+	Track          string `json:"track"`
+	ScheduledTrack string `json:"scheduledTrack"`
+
+	Cancelled     bool `json:"cancelled"`
+	TripCancelled bool `json:"tripCancelled"`
 }
 
-// Departures builds a query for the upcoming departures at the stop with the given ID.
+type motisPlace struct {
+	Name string `json:"name"`
+	ID   string `json:"stopId"`
+
+	Lat float64 `json:"lat"`
+	Lon float64 `json:"lon"`
+
+	Arrival            time.Time `json:"arrival"`
+	Departure          time.Time `json:"departure"`
+	ScheduledArrival   time.Time `json:"scheduledArrival"`
+	ScheduledDeparture time.Time `json:"scheduledDeparture"`
+}
+
 func (c *Client) Departures(id string) *departuresQuery {
 	return &departuresQuery{
 		c:        c,
 		id:       id,
-		duration: 60,
-		results:  0, // 0 means "no limit" — let duration decide.
+		results:  10,
 		language: "en",
+		duration: 60,
 	}
 }
+func translateStopTimes(in motisStopTimesResponse) []Departure {
+	out := make([]Departure, 0, len(in.StopTimes))
 
-// departuresResponse wraps the v6 departures payload, which is an object
-// ({ "departures": [...], "realtimeDataUpdatedAt": ... }) rather than a bare array.
-type departuresResponse struct {
-	Departures []Departure `json:"departures"`
+	for _, st := range in.StopTimes {
+		when := st.Place.Departure
+		if when.IsZero() {
+			when = st.Place.ScheduledDeparture
+		}
+		out = append(out, Departure{
+			TripID: st.TripID,
+
+			Stop: Location{
+				Type: "stop",
+				ID:   st.Place.ID,
+				Name: st.Place.Name,
+				Location: struct {
+					Type      string
+					ID        string
+					Latitude  float64
+					Longitude float64
+				}{
+					Type:      "location",
+					ID:        st.Place.ID,
+					Latitude:  st.Place.Lat,
+					Longitude: st.Place.Lon,
+				},
+			},
+
+			When: when,
+
+			Direction: st.Headsign,
+
+			Line: Line{
+				Type:    "line",
+				ID:      st.RouteShortName,
+				Name:    st.DisplayName,
+				FahrtNr: st.TripShortName,
+				Mode:    st.Mode,
+				Product: st.Mode,
+				Public:  true,
+				Operator: Operator{
+					Type: "operator",
+					ID:   st.AgencyID,
+					Name: st.AgencyName,
+				},
+			},
+		})
+	}
+	return out
 }
 
 func (q *departuresQuery) Do(ctx context.Context) ([]Departure, error) {
-	const u = "/stops/%s/departures?duration=%d&language=%s&pretty=false%s"
+	const u = "/api/v6/stoptimes?stopId=%s&n=%d&radius=200"
 
-	// Only cap the number of results when asked; otherwise let duration decide,
-	// matching the API default (an unset results means "no limit").
-	results := ""
-	if q.results > 0 {
-		results = fmt.Sprintf("&results=%d", q.results)
-	}
+	var resp motisStopTimesResponse
 
-	var resp departuresResponse
-	err := q.c.getJSON(ctx, &resp, u, q.id, q.duration, q.language, results)
+	err := q.c.getJSON(
+		ctx,
+		&resp,
+		u,
+		q.id,
+		q.results,
+	)
+
 	if err != nil {
 		return nil, err
 	}
 
-	return resp.Departures, nil
-}
-
-func (q *departuresQuery) Duration(d int) *departuresQuery {
-	q.duration = d
-	return q
+	return translateStopTimes(resp), nil
 }
 
 func (q *departuresQuery) Results(r int) *departuresQuery {
@@ -100,5 +180,10 @@ func (q *departuresQuery) Results(r int) *departuresQuery {
 
 func (q *departuresQuery) Language(l string) *departuresQuery {
 	q.language = l
+	return q
+}
+
+func (q *departuresQuery) Duration(d int) *departuresQuery {
+	q.duration = d
 	return q
 }

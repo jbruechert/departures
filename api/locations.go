@@ -1,6 +1,9 @@
 package api
 
-import "context"
+import (
+	"context"
+	"net/url"
+)
 
 type Location struct {
 	Type     string
@@ -42,16 +45,73 @@ func (c *Client) Locations(query string) *locationsQuery {
 	}
 }
 
-func (q *locationsQuery) Do(ctx context.Context) ([]Location, error) {
-	const u = "/locations?query=%s&fuzzy=%t&results=%d&stops=%t&addresses=%t&poi=%t&linesOfStops=%t&language=%s&pretty=false"
+type motisLocation struct {
+	ID string `json:"id"`
 
-	var locs []Location
-	err := q.c.getJSON(ctx, &locs, u, q.query, q.fuzzy, q.results, q.stops, q.addresses, q.poi, q.linesOfStops, q.language)
+	Name string `json:"name"`
+
+	Type string `json:"type"`
+
+	Lat float64 `json:"lat"`
+	Lon float64 `json:"lon"`
+
+	Place string `json:"place"`
+
+	Stops []motisLocationStop `json:"stops"`
+}
+
+type motisLocationStop struct {
+	ID string `json:"id"`
+
+	Name string `json:"name"`
+
+	Lat float64 `json:"lat"`
+	Lon float64 `json:"lon"`
+}
+
+func translateLocation(l motisLocation) Location {
+	var loc Location
+
+	loc.Type = l.Type
+	loc.ID = l.ID
+	loc.Name = l.Name
+
+	loc.Location.Type = "coordinates"
+	loc.Location.ID = l.ID
+	loc.Location.Latitude = l.Lat
+	loc.Location.Longitude = l.Lon
+
+	return loc
+}
+
+func translateLocations(resp []motisLocation) []Location {
+	locs := make([]Location, 0, len(resp))
+
+	for _, l := range resp {
+		locs = append(locs, translateLocation(l))
+	}
+
+	return locs
+}
+
+func (q *locationsQuery) Do(ctx context.Context) ([]Location, error) {
+	const u = "/api/v1/geocode?text=%s&limit=%d"
+
+	var resp []motisLocation
+
+	err := q.c.getJSON(
+		ctx,
+		&resp,
+		u,
+		url.QueryEscape(q.query),
+		q.results,
+	)
+
 	if err != nil {
 		return nil, err
 	}
 
-	return locs, nil
+	return translateLocations(resp), nil
 }
 
 func (q *locationsQuery) Fuzzy(f bool) *locationsQuery {
