@@ -131,7 +131,7 @@ func translateStopTimes(in motisStopTimesResponse) []Departure {
 				},
 			},
 
-			When: when,
+			When: when.Local(),
 
 			Direction: st.Headsign,
 
